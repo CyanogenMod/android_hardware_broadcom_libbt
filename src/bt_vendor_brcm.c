@@ -53,6 +53,9 @@ void hw_lpm_set_wake_state(uint8_t wake_assert);
 void hw_sco_config(void);
 #endif
 void vnd_load_conf(const char *p_path);
+#if (HW_END_WITH_HCI_RESET == TRUE)
+void hw_epilog_process(void);
+#endif
 
 /******************************************************************************
 **  Variables
@@ -201,6 +204,19 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                                         TRUE : FALSE;
 
                 hw_lpm_set_wake_state(wake_assert);
+            }
+            break;
+
+        case BT_VND_OP_EPILOG:
+            {
+#if (HW_END_WITH_HCI_RESET == FALSE)
+                if (bt_vendor_cbacks)
+                {
+                    bt_vendor_cbacks->epilog_cb(BT_VND_OP_RESULT_SUCCESS);
+                }
+#else
+                hw_epilog_process();
+#endif
             }
             break;
     }

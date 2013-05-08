@@ -349,6 +349,16 @@
 #define PCM_DATA_FMT_JUSTIFY_MODE       0
 #endif
 
+/* HW_END_WITH_HCI_RESET
+
+    Sample code implementation of sending a HCI_RESET command during the epilog
+    process. It calls back to the callers after command complete of HCI_RESET
+    is received.
+*/
+#ifndef HW_END_WITH_HCI_RESET
+#define HW_END_WITH_HCI_RESET    TRUE
+#endif
+
 /******************************************************************************
 **  Extern variables and functions
 ******************************************************************************/
