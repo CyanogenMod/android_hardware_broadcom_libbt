@@ -56,6 +56,9 @@ void vnd_load_conf(const char *p_path);
 #if (HW_END_WITH_HCI_RESET == TRUE)
 void hw_epilog_process(void);
 #endif
+#if (USE_AXI_BRIDGE_LOCK == TRUE)
+void axi_bridge_lock(int locked);
+#endif
 
 /******************************************************************************
 **  Variables
@@ -140,8 +143,12 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                 int *state = (int *) param;
                 if (*state == BT_VND_PWR_OFF)
                     upio_set_bluetooth_power(UPIO_BT_POWER_OFF);
-                else if (*state == BT_VND_PWR_ON)
+                else if (*state == BT_VND_PWR_ON) {
+#if (USE_AXI_BRIDGE_LOCK == TRUE)
+                    axi_bridge_lock(1);
+#endif
                     upio_set_bluetooth_power(UPIO_BT_POWER_ON);
+                }
             }
             break;
 
