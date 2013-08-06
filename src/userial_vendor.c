@@ -215,6 +215,9 @@ int userial_vendor_open(tUSERIAL_CFG *p_cfg)
         return -1;
     }
 
+#if (UART_FORCE_TWO_STOPBITS==TRUE)
+    stop_bits = CSTOPB;
+#else
     if(p_cfg->fmt & USERIAL_STOPBITS_1)
         stop_bits = 0;
     else if(p_cfg->fmt & USERIAL_STOPBITS_2)
@@ -224,6 +227,7 @@ int userial_vendor_open(tUSERIAL_CFG *p_cfg)
         ALOGE("userial vendor open: unsupported stop bits");
         return -1;
     }
+#endif
 
     ALOGI("userial vendor open: opening %s", vnd_userial.port_name);
 

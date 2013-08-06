@@ -63,6 +63,11 @@
 #define BLUETOOTH_UART_DEVICE_PORT      "/dev/ttyO1"    /* maguro */
 #endif
 
+/* Force use of two stop bits */
+#ifndef UART_FORCE_TWO_STOPBITS
+#define UART_FORCE_TWO_STOPBITS FALSE
+#endif
+
 /* Location of firmware patch files */
 #ifndef FW_PATCHFILE_LOCATION
 #define FW_PATCHFILE_LOCATION "/vendor/firmware/"  /* maguro */
