@@ -43,8 +43,5 @@ endif
 ifeq ($(TARGET_PRODUCT), full_wingray)
     include $(LOCAL_PATH)/conf/moto/wingray/Android.mk
 endif
-ifeq ($(TARGET_PRODUCT), dory)
-    include $(LOCAL_PATH)/conf/lge/dory/Android.mk
-endif
 
 endif # BOARD_HAVE_BLUETOOTH_BCM
