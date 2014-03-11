@@ -434,9 +434,10 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
             /*
              *  Kick proc btwrite node only at UPIO_ASSERT
              */
+#if (BT_WAKE_VIA_PROC_NOTIFY_DEASSERT == FALSE)
             if (action == UPIO_DEASSERT)
                 return;
-
+#endif
             fd = open(VENDOR_BTWRITE_PROC_NODE, O_WRONLY);
 
             if (fd < 0)
@@ -445,8 +446,12 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                         VENDOR_BTWRITE_PROC_NODE, strerror(errno), errno);
                 return;
             }
-
-            buffer = '1';
+#if (BT_WAKE_VIA_PROC_NOTIFY_DEASSERT == TRUE)
+            if (action == UPIO_DEASSERT)
+                buffer = '0';
+            else
+#endif
+                buffer = '1';
 
             if (write(fd, &buffer, 1) < 0)
             {
