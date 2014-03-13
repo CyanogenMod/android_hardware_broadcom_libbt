@@ -210,6 +210,10 @@
 #define BT_WAKE_VIA_PROC       FALSE
 #endif
 
+#ifndef BT_WAKE_VIA_PROC_NOTIFY_DEASSERT
+#define  BT_WAKE_VIA_PROC_NOTIFY_DEASSERT       FALSE
+#endif
+
 /* SCO_CFG_INCLUDED
 
     Do SCO configuration by default. If the firmware patch had been embedded
