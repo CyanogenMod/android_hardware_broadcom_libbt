@@ -244,8 +244,21 @@
 #define SCO_USE_I2S_INTERFACE           FALSE
 #endif
 
-#if (SCO_USE_I2S_INTERFACE == TRUE)
 #define SCO_I2SPCM_PARAM_SIZE           4
+
+/* SCO_WBS_SAMPLE_RATE
+    0 : 8K
+    1 : 16K
+    2 : 4K
+ This macro is used for setting WBS sampling rate for a SCO connection
+ If the mobile network supports WBS, we need to use 16KHz as default
+ but if the platform doesn't support 16KHz, the sample rate can be
+ overriden to 8KHz by setting this to 0.
+*/
+#ifndef SCO_WBS_SAMPLE_RATE
+#define SCO_WBS_SAMPLE_RATE            1
+#endif
+
 
 /* SCO_I2SPCM_IF_MODE - 0=Disable, 1=Enable */
 #ifndef SCO_I2SPCM_IF_MODE
@@ -278,7 +291,18 @@
 #ifndef SCO_I2SPCM_IF_CLOCK_RATE
 #define SCO_I2SPCM_IF_CLOCK_RATE        1
 #endif
-#endif // SCO_USE_I2S_INTERFACE
+
+/* SCO_I2SPCM_IF_CLOCK_RATE4WBS
+
+    0 : 128K
+    1 : 256K
+    2 : 512K
+    3 : 1024K
+    4 : 2048K
+*/
+#ifndef SCO_I2SPCM_IF_CLOCK_RATE4WBS
+#define SCO_I2SPCM_IF_CLOCK_RATE4WBS        2
+#endif
 
 
 #define SCO_PCM_PARAM_SIZE              5
@@ -296,6 +320,8 @@
 
 /* SCO_PCM_IF_CLOCK_RATE
 
+    NOTICE: suggested to be consistent with SCO_I2SPCM_IF_CLOCK_RATE
+
     0 : 128K
     1 : 256K
     2 : 512K
@@ -311,12 +337,25 @@
 #define SCO_PCM_IF_FRAME_TYPE           0
 #endif
 
-/* SCO_PCM_IF_SYNC_MODE - 0=Slave, 1=Master */
+/* SCO_PCM_IF_SYNC_MODE
+
+    NOTICE: in most usage cases the value will be the same as
+            SCO_PCM_IF_CLOCK_MODE setting
+
+    0 : Slave
+    1 : Master
+*/
 #ifndef SCO_PCM_IF_SYNC_MODE
 #define SCO_PCM_IF_SYNC_MODE            0
 #endif
 
-/* SCO_PCM_IF_CLOCK_MODE - 0=Slave, 1=Master */
+/* SCO_PCM_IF_CLOCK_MODE
+
+    NOTICE: suggested to be consistent with SCO_I2SPCM_IF_ROLE
+
+    0 : Slave
+    1 : Master
+*/
 #ifndef SCO_PCM_IF_CLOCK_MODE
 #define SCO_PCM_IF_CLOCK_MODE           0
 #endif
@@ -384,6 +423,8 @@
 ******************************************************************************/
 
 extern bt_vendor_callbacks_t *bt_vendor_cbacks;
+
+extern int hw_set_audio_state(bt_vendor_op_audio_state_t *p_state);
 
 #endif /* BT_VENDOR_BRCM_H */
 

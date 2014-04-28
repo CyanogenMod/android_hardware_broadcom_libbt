@@ -76,6 +76,7 @@
 #define HCI_VSC_WRITE_SCO_PCM_INT_PARAM         0xFC1C
 #define HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM     0xFC1E
 #define HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM    0xFC6D
+#define HCI_VSC_ENABLE_WBS                      0xFC7E
 #define HCI_VSC_LAUNCH_RAM                      0xFC4E
 #define HCI_READ_LOCAL_BDADDR                   0x1009
 
@@ -92,8 +93,16 @@
 #define LOCAL_BDADDR_PATH_BUFFER_LEN            256
 
 #define STREAM_TO_UINT16(u16, p) {u16 = ((uint16_t)(*(p)) + (((uint16_t)(*((p) + 1))) << 8)); (p) += 2;}
+#define UINT8_TO_STREAM(p, u8)   {*(p)++ = (uint8_t)(u8);}
 #define UINT16_TO_STREAM(p, u16) {*(p)++ = (uint8_t)(u16); *(p)++ = (uint8_t)((u16) >> 8);}
 #define UINT32_TO_STREAM(p, u32) {*(p)++ = (uint8_t)(u32); *(p)++ = (uint8_t)((u32) >> 8); *(p)++ = (uint8_t)((u32) >> 16); *(p)++ = (uint8_t)((u32) >> 24);}
+
+#define SCO_INTERFACE_PCM  0
+#define SCO_INTERFACE_I2S  1
+
+/* one byte is for enable/disable
+      next 2 bytes are for codec type */
+#define SCO_CODEC_PARAM_SIZE                    3
 
 /******************************************************************************
 **  Local type definitions
@@ -165,6 +174,7 @@ static char fw_patchfile_name[128] = { 0 };
 static int fw_patch_settlement_delay = -1;
 #endif
 
+static int wbs_sample_rate = SCO_WBS_SAMPLE_RATE;
 static bt_hw_cfg_cb_t hw_cfg_cb;
 
 static bt_lpm_param_t lpm_param =
@@ -183,7 +193,9 @@ static bt_lpm_param_t lpm_param =
     LPM_PULSED_HOST_WAKE
 };
 
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+/* need to update the bt_sco_i2spcm_param as well
+   bt_sco_i2spcm_param will be used for WBS setting
+   update the bt_sco_param and bt_sco_i2spcm_param */
 static uint8_t bt_sco_param[SCO_PCM_PARAM_SIZE] =
 {
     SCO_PCM_ROUTING,
@@ -201,15 +213,14 @@ static uint8_t bt_pcm_data_fmt_param[PCM_DATA_FORMAT_PARAM_SIZE] =
     PCM_DATA_FMT_FILL_NUM,
     PCM_DATA_FMT_JUSTIFY_MODE
 };
-#else
-static uint8_t bt_sco_param[SCO_I2SPCM_PARAM_SIZE] =
+
+static uint8_t bt_sco_i2spcm_param[SCO_I2SPCM_PARAM_SIZE] =
 {
     SCO_I2SPCM_IF_MODE,
     SCO_I2SPCM_IF_ROLE,
     SCO_I2SPCM_IF_SAMPLE_RATE,
     SCO_I2SPCM_IF_CLOCK_RATE
 };
-#endif
 
 /*
  * The look-up table of recommended firmware settlement delay (milliseconds) on
@@ -220,9 +231,30 @@ static const fw_settlement_entry_t fw_settlement_table[] = {
     {(const char *) NULL, 100}  // Giving the generic fw settlement delay setting.
 };
 
+
+/*
+ * NOTICE:
+ *     If the platform plans to run I2S interface bus over I2S/PCM port of the
+ *     BT Controller with the Host AP, explicitly set "SCO_USE_I2S_INTERFACE = TRUE"
+ *     in the correspodning include/vnd_<target>.txt file.
+ *     Otherwise, leave SCO_USE_I2S_INTERFACE undefined in the vnd_<target>.txt file.
+ *     And, PCM interface will be set as the default bus format running over I2S/PCM
+ *     port.
+ */
+#if (defined(SCO_USE_I2S_INTERFACE) && SCO_USE_I2S_INTERFACE == TRUE)
+static uint8_t sco_bus_interface = SCO_INTERFACE_I2S;
+#else
+static uint8_t sco_bus_interface = SCO_INTERFACE_PCM;
+#endif
+
+#define INVALID_SCO_CLOCK_RATE  0xFF
+static uint8_t sco_bus_clock_rate = INVALID_SCO_CLOCK_RATE;
+static uint8_t sco_bus_wbs_clock_rate = INVALID_SCO_CLOCK_RATE;
+
 /******************************************************************************
 **  Static functions
 ******************************************************************************/
+static void hw_sco_i2spcm_config(void *p_mem, uint16_t codec);
 
 /******************************************************************************
 **  Controller Initialization Static Functions
@@ -896,63 +928,146 @@ void hw_lpm_ctrl_cback(void *p_mem)
 
 /*******************************************************************************
 **
-** Function         hw_sco_cfg_cback
+** Function         hw_sco_i2spcm_cfg_cback
 **
-** Description      Callback function for SCO configuration rquest
+** Description      Callback function for SCO I2S/PCM configuration rquest
 **
 ** Returns          None
 **
 *******************************************************************************/
-void hw_sco_cfg_cback(void *p_mem)
+static void hw_sco_i2spcm_cfg_cback(void *p_mem)
 {
-    HC_BT_HDR *p_evt_buf = (HC_BT_HDR *) p_mem;
+    HC_BT_HDR   *p_evt_buf = (HC_BT_HDR *)p_mem;
     uint8_t     *p;
     uint16_t    opcode;
-    HC_BT_HDR  *p_buf=NULL;
+    HC_BT_HDR   *p_buf = NULL;
+    bt_vendor_op_result_t status = BT_VND_OP_RESULT_FAIL;
 
     p = (uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_OPCODE;
     STREAM_TO_UINT16(opcode,p);
+
+    if (*((uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_STATUS_RET_BYTE) == 0)
+    {
+        status = BT_VND_OP_RESULT_SUCCESS;
+    }
 
     /* Free the RX event buffer */
     if (bt_vendor_cbacks)
         bt_vendor_cbacks->dealloc(p_evt_buf);
 
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-    if (opcode == HCI_VSC_WRITE_SCO_PCM_INT_PARAM)
+    if (status == BT_VND_OP_RESULT_SUCCESS)
     {
-        uint8_t ret = FALSE;
-
-        /* Ask a new buffer to hold WRITE_PCM_DATA_FORMAT_PARAM command */
-        if (bt_vendor_cbacks)
-            p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
-                                                HCI_CMD_PREAMBLE_SIZE + \
-                                                PCM_DATA_FORMAT_PARAM_SIZE);
-        if (p_buf)
+        if ((opcode == HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM) &&
+            (SCO_INTERFACE_PCM == sco_bus_interface))
         {
-            p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
-            p_buf->offset = 0;
-            p_buf->layer_specific = 0;
-            p_buf->len = HCI_CMD_PREAMBLE_SIZE + PCM_DATA_FORMAT_PARAM_SIZE;
+            uint8_t ret = FALSE;
 
-            p = (uint8_t *) (p_buf + 1);
-            UINT16_TO_STREAM(p, HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM);
-            *p++ = PCM_DATA_FORMAT_PARAM_SIZE;
-            memcpy(p, &bt_pcm_data_fmt_param, PCM_DATA_FORMAT_PARAM_SIZE);
-
-            if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM,\
-                                           p_buf, hw_sco_cfg_cback)) == FALSE)
+            /* Ask a new buffer to hold WRITE_SCO_PCM_INT_PARAM command */
+            if (bt_vendor_cbacks)
+                p_buf = (HC_BT_HDR *)bt_vendor_cbacks->alloc(
+                        BT_HC_HDR_SIZE + HCI_CMD_PREAMBLE_SIZE + SCO_PCM_PARAM_SIZE);
+            if (p_buf)
             {
-                bt_vendor_cbacks->dealloc(p_buf);
+                p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
+                p_buf->offset = 0;
+                p_buf->layer_specific = 0;
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE + SCO_PCM_PARAM_SIZE;
+                p = (uint8_t *)(p_buf + 1);
+
+                /* do we need this VSC for I2S??? */
+                UINT16_TO_STREAM(p, HCI_VSC_WRITE_SCO_PCM_INT_PARAM);
+                *p++ = SCO_PCM_PARAM_SIZE;
+                memcpy(p, &bt_sco_param, SCO_PCM_PARAM_SIZE);
+                ALOGI("SCO PCM configure {0x%x, 0x%x, 0x%x, 0x%x, 0x%x}",
+                        bt_sco_param[0], bt_sco_param[1], bt_sco_param[2], bt_sco_param[3],
+                        bt_sco_param[4]);
+                if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_SCO_PCM_INT_PARAM, p_buf,
+                        hw_sco_i2spcm_cfg_cback)) == FALSE)
+                {
+                    bt_vendor_cbacks->dealloc(p_buf);
+                }
+                else
+                    return;
             }
-            else
-                return;
+            status = BT_VND_OP_RESULT_FAIL;
+        }
+        else if ((opcode == HCI_VSC_WRITE_SCO_PCM_INT_PARAM) &&
+                 (SCO_INTERFACE_PCM == sco_bus_interface))
+        {
+            uint8_t ret = FALSE;
+
+            /* Ask a new buffer to hold WRITE_PCM_DATA_FORMAT_PARAM command */
+            if (bt_vendor_cbacks)
+                p_buf = (HC_BT_HDR *)bt_vendor_cbacks->alloc(
+                        BT_HC_HDR_SIZE + HCI_CMD_PREAMBLE_SIZE + PCM_DATA_FORMAT_PARAM_SIZE);
+            if (p_buf)
+            {
+                p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
+                p_buf->offset = 0;
+                p_buf->layer_specific = 0;
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE + PCM_DATA_FORMAT_PARAM_SIZE;
+
+                p = (uint8_t *)(p_buf + 1);
+                UINT16_TO_STREAM(p, HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM);
+                *p++ = PCM_DATA_FORMAT_PARAM_SIZE;
+                memcpy(p, &bt_pcm_data_fmt_param, PCM_DATA_FORMAT_PARAM_SIZE);
+
+                ALOGI("SCO PCM data format {0x%x, 0x%x, 0x%x, 0x%x, 0x%x}",
+                        bt_pcm_data_fmt_param[0], bt_pcm_data_fmt_param[1],
+                        bt_pcm_data_fmt_param[2], bt_pcm_data_fmt_param[3],
+                        bt_pcm_data_fmt_param[4]);
+
+                if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM,
+                        p_buf, hw_sco_i2spcm_cfg_cback)) == FALSE)
+                {
+                    bt_vendor_cbacks->dealloc(p_buf);
+                }
+                else
+                    return;
+            }
+            status = BT_VND_OP_RESULT_FAIL;
         }
     }
-#endif  // !SCO_USE_I2S_INTERFACE
 
-if (bt_vendor_cbacks)
-    bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
+    ALOGI("sco I2S/PCM config result %d [0-Success, 1-Fail]", status);
+    if (bt_vendor_cbacks)
+    {
+        bt_vendor_cbacks->audio_state_cb(status);
+    }
 }
+
+/*******************************************************************************
+**
+** Function         hw_set_MSBC_codec_cback
+**
+** Description      Callback function for setting WBS codec
+**
+** Returns          None
+**
+*******************************************************************************/
+static void hw_set_MSBC_codec_cback(void *p_mem)
+{
+    /* whenever update the codec enable/disable, need to update I2SPCM */
+    ALOGI("SCO I2S interface change the sample rate to 16K");
+    hw_sco_i2spcm_config(p_mem, SCO_CODEC_MSBC);
+}
+
+/*******************************************************************************
+**
+** Function         hw_set_CVSD_codec_cback
+**
+** Description      Callback function for setting NBS codec
+**
+** Returns          None
+**
+*******************************************************************************/
+static void hw_set_CVSD_codec_cback(void *p_mem)
+{
+    /* whenever update the codec enable/disable, need to update I2SPCM */
+    ALOGI("SCO I2S interface change the sample rate to 8K");
+    hw_sco_i2spcm_config(p_mem, SCO_CODEC_CVSD);
+}
+
 #endif // SCO_CFG_INCLUDED
 
 /*****************************************************************************
@@ -1121,61 +1236,234 @@ void hw_lpm_set_wake_state(uint8_t wake_assert)
 *******************************************************************************/
 void hw_sco_config(void)
 {
-    HC_BT_HDR  *p_buf = NULL;
-    uint8_t     *p, ret;
+    if (SCO_INTERFACE_I2S == sco_bus_interface)
+    {
+        /* 'Enable' I2S mode */
+        bt_sco_i2spcm_param[0] = 1;
 
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-    uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_PCM_PARAM_SIZE;
-#else
-    uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_I2SPCM_PARAM_SIZE;
-#endif
+        /* set nbs clock rate as the value in SCO_I2SPCM_IF_CLOCK_RATE field */
+        sco_bus_clock_rate = bt_sco_i2spcm_param[3];
+    }
+    else
+    {
+        /* 'Disable' I2S mode */
+        bt_sco_i2spcm_param[0] = 0;
+
+        /* set nbs clock rate as the value in SCO_PCM_IF_CLOCK_RATE field */
+        sco_bus_clock_rate = bt_sco_param[1];
+
+        /* sync up clock mode setting */
+        bt_sco_i2spcm_param[1] = bt_sco_param[4];
+    }
+
+    if (sco_bus_wbs_clock_rate == INVALID_SCO_CLOCK_RATE)
+    {
+        /* set default wbs clock rate */
+        sco_bus_wbs_clock_rate = SCO_I2SPCM_IF_CLOCK_RATE4WBS;
+
+        if (sco_bus_wbs_clock_rate < sco_bus_clock_rate)
+            sco_bus_wbs_clock_rate = sco_bus_clock_rate;
+    }
+
+    /*
+     *  To support I2S/PCM port multiplexing signals for sharing Bluetooth audio
+     *  and FM on the same PCM pins, we defer Bluetooth audio (SCO/eSCO)
+     *  configuration till SCO/eSCO is being established;
+     *  i.e. in hw_set_audio_state() call.
+     */
 
     if (bt_vendor_cbacks)
-        p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE+cmd_u16);
+    {
+        bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
+    }
+}
+
+/*******************************************************************************
+**
+** Function         hw_sco_i2spcm_config
+**
+** Description      Configure SCO over I2S or PCM
+**
+** Returns          None
+**
+*******************************************************************************/
+static void hw_sco_i2spcm_config(void *p_mem, uint16_t codec)
+{
+    HC_BT_HDR *p_evt_buf = (HC_BT_HDR *)p_mem;
+    bt_vendor_op_result_t status = BT_VND_OP_RESULT_FAIL;
+
+    if (*((uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_STATUS_RET_BYTE) == 0)
+    {
+        status = BT_VND_OP_RESULT_SUCCESS;
+    }
+
+    /* Free the RX event buffer */
+    if (bt_vendor_cbacks)
+        bt_vendor_cbacks->dealloc(p_evt_buf);
+
+    if (status == BT_VND_OP_RESULT_SUCCESS)
+    {
+        HC_BT_HDR *p_buf = NULL;
+        uint8_t *p, ret;
+        uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_I2SPCM_PARAM_SIZE;
+
+        if (bt_vendor_cbacks)
+            p_buf = (HC_BT_HDR *)bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + cmd_u16);
+
+        if (p_buf)
+        {
+            p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
+            p_buf->offset = 0;
+            p_buf->layer_specific = 0;
+            p_buf->len = cmd_u16;
+
+            p = (uint8_t *)(p_buf + 1);
+
+            UINT16_TO_STREAM(p, HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM);
+            *p++ = SCO_I2SPCM_PARAM_SIZE;
+            if (codec == SCO_CODEC_CVSD)
+            {
+                bt_sco_i2spcm_param[2] = 0; /* SCO_I2SPCM_IF_SAMPLE_RATE  8k */
+                bt_sco_i2spcm_param[3] = bt_sco_param[1] = sco_bus_clock_rate;
+            }
+            else if (codec == SCO_CODEC_MSBC)
+            {
+                bt_sco_i2spcm_param[2] = wbs_sample_rate; /* SCO_I2SPCM_IF_SAMPLE_RATE 16K */
+                bt_sco_i2spcm_param[3] = bt_sco_param[1] = sco_bus_wbs_clock_rate;
+            }
+            else
+            {
+                bt_sco_i2spcm_param[2] = 0; /* SCO_I2SPCM_IF_SAMPLE_RATE  8k */
+                bt_sco_i2spcm_param[3] = bt_sco_param[1] = sco_bus_clock_rate;
+                ALOGE("wrong codec is use in hw_sco_i2spcm_config, goes default NBS");
+            }
+            memcpy(p, &bt_sco_i2spcm_param, SCO_I2SPCM_PARAM_SIZE);
+            cmd_u16 = HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM;
+            ALOGI("I2SPCM config {0x%x, 0x%x, 0x%x, 0x%x}",
+                    bt_sco_i2spcm_param[0], bt_sco_i2spcm_param[1],
+                    bt_sco_i2spcm_param[2], bt_sco_i2spcm_param[3]);
+
+            if ((ret = bt_vendor_cbacks->xmit_cb(cmd_u16, p_buf, hw_sco_i2spcm_cfg_cback)) == FALSE)
+            {
+                bt_vendor_cbacks->dealloc(p_buf);
+            }
+            else
+                return;
+        }
+        status = BT_VND_OP_RESULT_FAIL;
+    }
+
+    if (bt_vendor_cbacks)
+    {
+        bt_vendor_cbacks->audio_state_cb(status);
+    }
+}
+
+/*******************************************************************************
+**
+** Function         hw_set_SCO_codec
+**
+** Description      This functgion sends command to the controller to setup
+**                              WBS/NBS codec for the upcoming eSCO connection.
+**
+** Returns          -1 : Failed to send VSC
+**                   0 : Success
+**
+*******************************************************************************/
+static int hw_set_SCO_codec(uint16_t codec)
+{
+    HC_BT_HDR   *p_buf = NULL;
+    uint8_t     *p;
+    uint8_t     ret;
+    int         ret_val = 0;
+    tINT_CMD_CBACK p_set_SCO_codec_cback;
+
+    BTHWDBG( "hw_set_SCO_codec 0x%x", codec);
+
+    if (bt_vendor_cbacks)
+        p_buf = (HC_BT_HDR *)bt_vendor_cbacks->alloc(
+                BT_HC_HDR_SIZE + HCI_CMD_PREAMBLE_SIZE + SCO_CODEC_PARAM_SIZE);
 
     if (p_buf)
     {
         p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
         p_buf->offset = 0;
         p_buf->layer_specific = 0;
-        p_buf->len = cmd_u16;
+        p = (uint8_t *)(p_buf + 1);
 
-        p = (uint8_t *) (p_buf + 1);
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-        UINT16_TO_STREAM(p, HCI_VSC_WRITE_SCO_PCM_INT_PARAM);
-        *p++ = SCO_PCM_PARAM_SIZE;
-        memcpy(p, &bt_sco_param, SCO_PCM_PARAM_SIZE);
-        cmd_u16 = HCI_VSC_WRITE_SCO_PCM_INT_PARAM;
-        ALOGI("SCO PCM configure {%d, %d, %d, %d, %d}",
-           bt_sco_param[0], bt_sco_param[1], bt_sco_param[2], bt_sco_param[3], \
-           bt_sco_param[4]);
+        UINT16_TO_STREAM(p, HCI_VSC_ENABLE_WBS);
 
-#else
-        UINT16_TO_STREAM(p, HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM);
-        *p++ = SCO_I2SPCM_PARAM_SIZE;
-        memcpy(p, &bt_sco_param, SCO_I2SPCM_PARAM_SIZE);
-        cmd_u16 = HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM;
-        ALOGI("SCO over I2SPCM interface {%d, %d, %d, %d}",
-           bt_sco_param[0], bt_sco_param[1], bt_sco_param[2], bt_sco_param[3]);
-#endif
-
-        if ((ret=bt_vendor_cbacks->xmit_cb(cmd_u16, p_buf, hw_sco_cfg_cback)) \
-             == FALSE)
+        if (codec == SCO_CODEC_MSBC)
         {
-            bt_vendor_cbacks->dealloc(p_buf);
+            /* Enable mSBC */
+            *p++ = SCO_CODEC_PARAM_SIZE; /* set the parameter size */
+            UINT8_TO_STREAM(p,1); /* enable */
+            UINT16_TO_STREAM(p, codec);
+
+            /* set the totall size of this packet */
+            p_buf->len = HCI_CMD_PREAMBLE_SIZE + SCO_CODEC_PARAM_SIZE;
+
+            p_set_SCO_codec_cback = hw_set_MSBC_codec_cback;
         }
         else
-            return;
-    }
+        {
+            /* Disable mSBC */
+            *p++ = (SCO_CODEC_PARAM_SIZE - 2); /* set the parameter size */
+            UINT8_TO_STREAM(p,0); /* disable */
 
-    if (bt_vendor_cbacks)
+            /* set the totall size of this packet */
+            p_buf->len = HCI_CMD_PREAMBLE_SIZE + SCO_CODEC_PARAM_SIZE - 2;
+
+            p_set_SCO_codec_cback = hw_set_CVSD_codec_cback;
+            if ((codec != SCO_CODEC_CVSD) && (codec != SCO_CODEC_NONE))
+            {
+                ALOGW("SCO codec setting is wrong: codec: 0x%x", codec);
+            }
+        }
+
+        if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_ENABLE_WBS, p_buf, p_set_SCO_codec_cback))\
+              == FALSE)
+        {
+            bt_vendor_cbacks->dealloc(p_buf);
+            ret_val = -1;
+        }
+    }
+    else
     {
-        ALOGE("vendor lib scocfg aborted");
-        bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_FAIL);
+        ret_val = -1;
     }
-}
-#endif  // SCO_CFG_INCLUDED
 
+    return ret_val;
+}
+
+/*******************************************************************************
+**
+** Function         hw_set_audio_state
+**
+** Description      This function configures audio base on provided audio state
+**
+** Paramters        pointer to audio state structure
+**
+** Returns          0: ok, -1: error
+**
+*******************************************************************************/
+int hw_set_audio_state(bt_vendor_op_audio_state_t *p_state)
+{
+    int ret_val = -1;
+
+    if (!bt_vendor_cbacks)
+        return ret_val;
+
+    ret_val = hw_set_SCO_codec(p_state->peer_codec);
+    return ret_val;
+}
+
+#else  // SCO_CFG_INCLUDED
+int hw_set_audio_state(bt_vendor_op_audio_state_t *p_state)
+{
+    return -256;
+}
+#endif
 /*******************************************************************************
 **
 ** Function        hw_set_patch_file_path
