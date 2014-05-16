@@ -462,7 +462,7 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                     struct itimerspec ts;
 
                     ts.it_value.tv_sec = PROC_BTWRITE_TIMER_TIMEOUT_MS/1000;
-                    ts.it_value.tv_nsec = 1000*(PROC_BTWRITE_TIMER_TIMEOUT_MS%1000);
+                    ts.it_value.tv_nsec = 1000000*(PROC_BTWRITE_TIMER_TIMEOUT_MS%1000);
                     ts.it_interval.tv_sec = 0;
                     ts.it_interval.tv_nsec = 0;
 
