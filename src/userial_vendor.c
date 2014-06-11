@@ -137,6 +137,19 @@ void userial_ioctl_init_bt_wake(int fd)
 {
     uint32_t bt_wake_state;
 
+#if (BT_WAKE_USERIAL_LDISC==TRUE)
+    int ldisc = N_BRCM_HCI; /* brcm sleep mode support line discipline */
+
+    /* attempt to load enable discipline driver */
+    if (ioctl(vnd_userial.fd, TIOCSETD, &ldisc) < 0)
+    {
+        VNDUSERIALDBG("USERIAL_Open():fd %d, TIOCSETD failed: error %d for ldisc: %d",
+                      fd, errno, ldisc);
+    }
+#endif
+
+
+
     /* assert BT_WAKE through ioctl */
     ioctl(fd, USERIAL_IOCTL_BT_WAKE_ASSERT, NULL);
     ioctl(fd, USERIAL_IOCTL_BT_WAKE_GET_ST, &bt_wake_state);
