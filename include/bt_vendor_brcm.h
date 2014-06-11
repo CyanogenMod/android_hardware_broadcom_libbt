@@ -202,6 +202,14 @@
 #define BT_WAKE_VIA_USERIAL_IOCTL       FALSE
 #endif
 
+/* BT_WAKE_USERIAL_LDISC
+
+    Use line discipline if the BT_WAKE control is in line discipline
+*/
+#ifndef BT_WAKE_USERIAL_LDISC
+#define BT_WAKE_USERIAL_LDISC           FALSE
+#endif
+
 /* BT_WAKE_VIA_PROC
 
     LPM & BT_WAKE control through PROC nodes
@@ -212,6 +220,14 @@
 
 #ifndef BT_WAKE_VIA_PROC_NOTIFY_DEASSERT
 #define  BT_WAKE_VIA_PROC_NOTIFY_DEASSERT       FALSE
+#endif
+
+/* N_BRCM_HCI
+
+    UART ioctl line discipline
+*/
+#ifndef N_BRCM_HCI
+#define N_BRCM_HCI             25
 #endif
 
 /* SCO_CFG_INCLUDED
