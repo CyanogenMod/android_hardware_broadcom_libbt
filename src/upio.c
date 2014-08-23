@@ -372,6 +372,7 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                 ALOGE("upio_set : write(%s) failed: %s (%d)",
                         VENDOR_LPM_PROC_NODE, strerror(errno),errno);
             }
+#if (PROC_BTWRITE_TIMER_TIMEOUT_MS != 0)
             else
             {
                 if (action == UPIO_ASSERT)
@@ -395,6 +396,7 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                     }
                 }
             }
+#endif
 
             if (fd >= 0)
                 close(fd);
@@ -453,6 +455,7 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                 ALOGE("upio_set : write(%s) failed: %s (%d)",
                         VENDOR_BTWRITE_PROC_NODE, strerror(errno),errno);
             }
+#if (PROC_BTWRITE_TIMER_TIMEOUT_MS != 0)
             else
             {
                 lpm_proc_cb.btwrite_active = TRUE;
@@ -469,6 +472,7 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                     timer_settime(lpm_proc_cb.timer_id, 0, &ts, 0);
                 }
             }
+#endif
 
             UPIODBG("proc btwrite assertion");
 
