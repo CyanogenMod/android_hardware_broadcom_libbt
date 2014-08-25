@@ -217,6 +217,7 @@ static uint8_t bt_sco_param[SCO_I2SPCM_PARAM_SIZE] =
  */
 static const fw_settlement_entry_t fw_settlement_table[] = {
     {"BCM43241", 200},
+    {"BCM43341", 200},
     {(const char *) NULL, 100}  // Giving the generic fw settlement delay setting.
 };
 
@@ -586,6 +587,7 @@ void hw_config_cback(void *p_mem)
     HC_BT_HDR  *p_buf=NULL;
     uint8_t     is_proceeding = FALSE;
     int         i;
+    int         delay=100;
 #if (USE_CONTROLLER_BDADDR == TRUE)
     const uint8_t null_bdaddr[BD_ADDR_LEN] = {0,0,0,0,0,0};
 #endif
@@ -728,7 +730,9 @@ void hw_config_cback(void *p_mem)
                 /* Check if we need to pause a few hundred milliseconds
                  * before sending down any HCI command.
                  */
-                ms_delay(look_up_fw_settlement_delay());
+                delay = look_up_fw_settlement_delay();
+                ALOGI("Setting fw settlement delay to %d ", delay);
+                ms_delay(delay);
 
                 /* fall through intentionally */
             case HW_CFG_START:
