@@ -217,7 +217,7 @@ static uint8_t bt_sco_param[SCO_I2SPCM_PARAM_SIZE] =
  */
 static const fw_settlement_entry_t fw_settlement_table[] = {
     {"BCM43241", 200},
-    {"BCM43341", 200},
+    {"BCM43341", 100},
     {(const char *) NULL, 100}  // Giving the generic fw settlement delay setting.
 };
 
@@ -734,7 +734,13 @@ void hw_config_cback(void *p_mem)
                 ALOGI("Setting fw settlement delay to %d ", delay);
                 ms_delay(delay);
 
-                /* fall through intentionally */
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE;
+                UINT16_TO_STREAM(p, HCI_RESET);
+                *p = 0; /* parameter length */
+                hw_cfg_cb.state = HW_CFG_START;
+                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_RESET, p_buf, hw_config_cback);
+                break;
+
             case HW_CFG_START:
                 if (UART_TARGET_BAUD_RATE > 3000000)
                 {
