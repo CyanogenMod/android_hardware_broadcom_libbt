@@ -370,6 +370,8 @@ uint8_t line_speed_to_userial_baud(uint32_t line_speed)
         baud = USERIAL_BAUD_3M;
     else if (line_speed == 2000000)
         baud = USERIAL_BAUD_2M;
+    else if (line_speed == 1500000)
+        baud = USERIAL_BAUD_1_5M;
     else if (line_speed == 1000000)
         baud = USERIAL_BAUD_1M;
     else if (line_speed == 921600)
