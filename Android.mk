@@ -4,10 +4,19 @@ ifneq ($(BOARD_HAVE_BLUETOOTH_BCM),)
 
 include $(CLEAR_VARS)
 
+ifneq ($(BOARD_BLUETOOTH_BDROID_BUILDCFG_INCLUDE_DIR),)
+  bdroid_C_INCLUDES := $(BOARD_BLUETOOTH_BDROID_BUILDCFG_INCLUDE_DIR)
+  bdroid_CFLAGS += -DHAS_BDROID_BUILDCFG
+else
+  bdroid_C_INCLUDES :=
+  bdroid_CFLAGS += -DHAS_NO_BDROID_BUILDCFG
+endif
+
 BDROID_DIR := $(TOP_DIR)external/bluetooth/bluedroid
 
 LOCAL_SRC_FILES := \
         src/bt_vendor_brcm.c \
+        src/bt_vendor_brcm_a2dp.c \
         src/hardware.c \
         src/userial_vendor.c \
         src/upio.c \
@@ -15,7 +24,13 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES += \
         $(LOCAL_PATH)/include \
-        $(BDROID_DIR)/hci/include
+        $(BDROID_DIR)/hci/include \
+        $(BDROID_DIR)/include \
+        $(BDROID_DIR)/stack/include \
+        $(BDROID_DIR)/gki/ulinux
+
+LOCAL_C_INCLUDES += $(bdroid_C_INCLUDES)
+LOCAL_CFLAGS += $(bdroid_CFLAGS)
 
 LOCAL_SHARED_LIBRARIES := \
         libcutils \
