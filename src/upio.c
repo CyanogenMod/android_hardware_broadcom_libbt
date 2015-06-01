@@ -198,7 +198,6 @@ static void proc_btwrite_timeout(union sigval arg)
     /* drive LPM down; this timer should fire only when BT is awake; */
     upio_set(UPIO_BT_WAKE, UPIO_DEASSERT, 1);
 }
-#endif
 
 /******************************************************************************
  **
@@ -231,6 +230,7 @@ void upio_start_stop_timer(int action) {
         UPIODBG("%s : timer_settime failed", __FUNCTION__);
     }
 }
+#endif
 
 /*****************************************************************************
 **   UPIO Interface Functions
