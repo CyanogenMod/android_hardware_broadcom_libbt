@@ -112,6 +112,9 @@ struct btlock {
     int cookie;
 };
 #endif
+#ifdef SAMSUNG_BLUETOOTH
+#define CID_PATH "/data/.cid.info"
+#endif
 
 /******************************************************************************
 **  Local type definitions
@@ -425,6 +428,46 @@ static int hw_strncmp (const char *p_str1, const char *p_str2, const int len)
     return 0;
 }
 
+#ifdef SAMSUNG_BLUETOOTH
+/*******************************************************************************
+**
+** Function         hw_samsung_bluetooth_type
+**
+** Description      Returns the type of bluetooth chip present in samsung
+**                  device.
+**
+** Returns          Returns char* (bluetooth type)
+**
+*******************************************************************************/
+static char *hw_samsung_bluetooth_type()
+{
+    char buf[10];
+    int fd = open(CID_PATH, O_RDONLY);
+    if (fd < 0) {
+        ALOGE("Couldn't open file %s for reading", CID_PATH);
+        return NULL;
+    }
+
+    if (read(fd, buf, sizeof(buf)) < 0) {
+        close(fd);
+        return NULL;
+    }
+
+    close(fd);
+
+    if (strncmp(buf, "murata", 6) == 0)
+        return "_murata";
+
+    if (strncmp(buf, "semcove", 7) == 0)
+        return "_semcove";
+
+    if (strncmp(buf, "semcosh", 7) == 0)
+        return "_semcosh";
+
+    return NULL;
+}
+#endif
+
 /*******************************************************************************
 **
 ** Function         hw_config_findpatch
@@ -470,9 +513,26 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str)
         while ((dp = readdir(dirp)) != NULL)
         {
             /* Check if filename starts with chip-id name */
+#ifdef SAMSUNG_BLUETOOTH
+            char *type = hw_samsung_bluetooth_type();
+            char samsung_patchfile_name[FW_PATCHFILE_PATH_MAXLEN] = { 0 };
+            memset(samsung_patchfile_name, 0, FW_PATCHFILE_PATH_MAXLEN);
+            strcpy(samsung_patchfile_name, p_chip_id_str);
+            if (type != NULL)
+            {
+                strcat(samsung_patchfile_name, type);
+            }
+
+            if ((hw_strncmp(dp->d_name, samsung_patchfile_name,
+                strlen(samsung_patchfile_name))) == 0)
+            {
+                memset(p_chip_id_str, 0, FW_PATCHFILE_PATH_MAXLEN);
+                strcpy(p_chip_id_str, samsung_patchfile_name);
+#else
             if ((hw_strncmp(dp->d_name, p_chip_id_str, strlen(p_chip_id_str)) \
                 ) == 0)
             {
+#endif
                 /* Check if it has .hcd extenstion */
                 filenamelen = strlen(dp->d_name);
                 if ((filenamelen >= FW_PATCHFILE_EXTENSION_LEN) &&
