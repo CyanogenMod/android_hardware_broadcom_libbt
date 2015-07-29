@@ -446,7 +446,7 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                 UPIODBG("BT_WAKE is %s already", lpm_state[action]);
 
 #if (BT_WAKE_VIA_PROC == TRUE)
-                if (lpm_proc_cb.btwrite_active == TRUE) {
+                if (lpm_proc_cb.btwrite_active == TRUE)
                     /*
                      * The proc btwrite node could have not been updated for
                      * certain time already due to heavy downstream path flow.
@@ -456,10 +456,7 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                      * a 10sec internal in-activity timeout timer before it
                      * attempts to deassert BT_WAKE line.
                      */
-                    /* re-arm user space timer */
-                    upio_start_stop_timer(action);
                     return;
-                }
 #else
                 return;
 #endif
