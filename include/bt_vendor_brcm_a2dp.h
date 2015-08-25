@@ -81,6 +81,11 @@ bit 4-7:   Drive Strength
 #define BRCM_A2DP_OFFLOAD_SRC_SF  AUDIO_ROUTE_SF_48K
 #endif
 
+#ifndef BRCM_A2DP_OFFLOAD_MAX_BITPOOL
+/* High quality setting @ 44.1 kHz */
+#define BRCM_A2DP_OFFLOAD_MAX_BITPOOL 53
+#endif
+
 #ifndef BRCM_A2DP_OFFLOAD_PCM_PIN_FCN
 #define BRCM_A2DP_OFFLOAD_PCM_PIN_FCN PCM_PIN_FCN_I2S_SLAVE
 #endif

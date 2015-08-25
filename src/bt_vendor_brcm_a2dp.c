@@ -258,8 +258,9 @@ static tA2D_STATUS bcrm_vnd_a2dp_parse_codec_info(tCODEC_INFO_SBC *parsed_info, 
             parsed_info->block_length  = *codec_info & A2D_SBC_IE_BLOCKS_MSK;
             parsed_info->num_subbands  = *codec_info & A2D_SBC_IE_SUBBAND_MSK;
             parsed_info->alloc_method  = *codec_info & A2D_SBC_IE_ALLOC_MD_MSK;
-            codec_info += 2;
-            parsed_info->bitpool_size  = *codec_info; // MAX BITPOOL //
+            codec_info += 2; /* MAX Bitpool */
+            parsed_info->bitpool_size  = (*codec_info > BRCM_A2DP_OFFLOAD_MAX_BITPOOL) ?
+                                         BRCM_A2DP_OFFLOAD_MAX_BITPOOL : (*codec_info);
 
             if(MULTI_BIT_SET(parsed_info->sampling_freq))
                 status = A2D_BAD_SAMP_FREQ;
