@@ -499,13 +499,16 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
                 ALOGE("upio_set : write(%s) failed: %s (%d)",
                         VENDOR_BTWRITE_PROC_NODE, strerror(errno),errno);
             }
-#if (PROC_BTWRITE_TIMER_TIMEOUT_MS != 0)
             else
             {
+#if (BT_WAKE_VIA_PROC == TRUE)
+                lpm_proc_cb.btwrite_active = TRUE;
+#endif
+#if (PROC_BTWRITE_TIMER_TIMEOUT_MS != 0)
                 /* arm user space timer based on action */
                 upio_start_stop_timer(action);
-            }
 #endif
+            }
 
             UPIODBG("%s: proc btwrite assertion, buffer: %c, timer_armed %d %d",
                     __FUNCTION__, buffer, lpm_proc_cb.btwrite_active, lpm_proc_cb.timer_created);
