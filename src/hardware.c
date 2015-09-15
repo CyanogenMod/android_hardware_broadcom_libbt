@@ -464,7 +464,7 @@ static char *hw_samsung_bluetooth_type()
     if (strncmp(buf, "semcosh", 7) == 0)
         return "_semcosh";
 
-    if (strncmp(buf, "wisol", 7) == 0)
+    if (strncmp(buf, "wisol", 5) == 0)
         return "_wisol";
 
     return NULL;
