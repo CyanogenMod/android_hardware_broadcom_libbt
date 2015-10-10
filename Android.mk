@@ -54,6 +54,10 @@ ifeq ($(BCM_BLUETOOTH_MANTA_BUG), true)
     LOCAL_CFLAGS += -DMANTA_BUG
 endif
 
+ifeq ($(BCM_BLUETOOTH_MANTA_BUG), true)
+    LOCAL_CFLAGS += -DMANTA_BUG
+endif
+
 include $(LOCAL_PATH)/vnd_buildcfg.mk
 
 include $(BUILD_SHARED_LIBRARY)
