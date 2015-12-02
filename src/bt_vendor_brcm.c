@@ -123,10 +123,6 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
     /* This is handed over from the stack */
     memcpy(vnd_local_bd_addr, local_bdaddr, 6);
 
-#if (BRCM_A2DP_OFFLOAD == TRUE)
-    brcm_vnd_a2dp_init();
-#endif
-
     return 0;
 }
 
@@ -134,7 +130,7 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
 /** Requested operations */
 static int op(bt_vendor_opcode_t opcode, void *param)
 {
-    int retval = BT_VND_OP_RESULT_SUCCESS;
+    int retval = 0;
 
     BTVNDDBG("op for %d", opcode);
 
@@ -229,10 +225,6 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                 hw_epilog_process();
 #endif
             }
-
-        case BT_VND_OP_A2DP_OFFLOAD_START:
-        case BT_VND_OP_A2DP_OFFLOAD_STOP:
-            retval = brcm_vnd_a2dp_execute(opcode, param);
             break;
     }
 
