@@ -84,16 +84,18 @@ typedef enum
 }
 tBRCM_VND_A2DP_SST_STATES;
 
-static uint8_t brcm_vnd_a2dp_offload_configure();
 static uint8_t brcm_vnd_a2dp_offload_cleanup();
 static uint8_t brcm_vnd_a2dp_offload_suspend();
+static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_idle_enter(tBRCM_VND_A2DP_EVENT event);
+static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_starting_enter(tBRCM_VND_A2DP_EVENT event);
+static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_stream_enter(tBRCM_VND_A2DP_EVENT event);
 static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_idle_process_ev(tBRCM_VND_A2DP_EVENT event, void *ev_data);
 static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_starting_process_ev(tBRCM_VND_A2DP_EVENT event, void *ev_data);
 static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_stream_process_ev(tBRCM_VND_A2DP_EVENT event, void *ev_data);
 static void brcm_vnd_a2dp_hci_uipc_cback(void *pmem);
 
 typedef struct {
-    uint8_t     fcn;
+    uint8_t        fcn;
     uint32_t    pad_conf;
 }
 tBRCM_VND_PCM_CONF;
@@ -115,9 +117,9 @@ tBRCM_VND_A2DP_SST_STATE;
 /* state table */
 static tBRCM_VND_A2DP_SST_STATE brcm_vnd_a2dp_sst_tbl[] =
 {
-    {NULL, brcm_vnd_a2dp_sm_idle_process_ev},
-    {NULL, brcm_vnd_a2dp_sm_starting_process_ev},
-    {NULL, brcm_vnd_a2dp_sm_stream_process_ev},
+    {brcm_vnd_a2dp_sm_idle_enter,     brcm_vnd_a2dp_sm_idle_process_ev},
+    {brcm_vnd_a2dp_sm_starting_enter, brcm_vnd_a2dp_sm_starting_process_ev},
+    {brcm_vnd_a2dp_sm_stream_enter,   brcm_vnd_a2dp_sm_stream_process_ev},
 };
 
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -305,9 +307,9 @@ int brcm_vnd_a2dp_ssm_execute(tBRCM_VND_A2DP_EVENT event, void *ev_data)
     tBRCM_VND_A2DP_SST_STATE *state_table;
     tBRCM_VND_A2DP_SST_STATES next_state;
 
-    pthread_mutex_lock(&g_mutex);
-
     BTA2DPDBG("%s ev %d state %d", __FUNCTION__, event, brcm_vnd_a2dp_pdata.state);
+
+    pthread_mutex_lock(&g_mutex);
 
     if (brcm_vnd_a2dp_pdata.state != BRCM_VND_A2DP_INVALID_SST) {
         state_table = &brcm_vnd_a2dp_sst_tbl[brcm_vnd_a2dp_pdata.state];
@@ -335,6 +337,101 @@ int brcm_vnd_a2dp_ssm_execute(tBRCM_VND_A2DP_EVENT event, void *ev_data)
 
 /* state machine actions */
 
+static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_idle_enter(tBRCM_VND_A2DP_EVENT event)
+{
+    UNUSED(event);
+    BTA2DPDBG("%s", __FUNCTION__);
+    brcm_vnd_a2dp_pdata.pcmi2s_pinmux.fcn = PCM_PIN_FCN_INVALID;
+    return brcm_vnd_a2dp_pdata.state;
+}
+
+static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_starting_enter(tBRCM_VND_A2DP_EVENT event)
+{
+    UNUSED(event);
+    uint8_t *p, msg_req[HCI_CMD_MAX_LEN];
+    BTA2DPDBG("%s", __FUNCTION__);
+
+    p = msg_req;
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_READ_PCM_PINS, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    p = msg_req;
+    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_PCM_PIN_FCN);
+    UINT32_TO_STREAM(p, BRCM_A2DP_OFFLOAD_PCM_PIN_PADCNF);
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_WRITE_PCM_PINS, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    p = msg_req;
+    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_MGMT_EVT);
+    UINT8_TO_STREAM(p, UIPC_OPEN_REQ);
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    p = msg_req;
+    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_L2C_EVT);
+    UINT8_TO_STREAM(p, L2C_SYNC_TO_LITE_REQ);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.xmit_quota);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.acl_data_size);
+    UINT16_TO_STREAM(p, !(brcm_vnd_a2dp_pdata.offload_params.is_flushable));
+    UINT8_TO_STREAM(p, 0x02); //multi_av_data_cong_start
+    UINT8_TO_STREAM(p, 0x00); //multi_av_data_cong_end
+    UINT8_TO_STREAM(p, 0x04); //multi_av_data_cong_discard
+    UINT8_TO_STREAM(p, 1); //num_stream
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.local_cid);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.remote_cid);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.stream_mtu);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.lm_handle);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.xmit_quota);
+    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.is_flushable);
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    p = msg_req;
+    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_AVDT_EVT);
+    UINT8_TO_STREAM(p, AVDT_SYNC_TO_BTC_LITE_REQ);
+    UINT8_TO_STREAM(p, 1); //num_stream
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.local_cid);
+    UINT32_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.stream_source);
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    p = msg_req;
+    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_BTM_EVT);
+    UINT8_TO_STREAM(p, AUDIO_ROUTE_CONFIG_REQ);
+    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_SRC);
+    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_SRC_SF);
+    UINT8_TO_STREAM(p, AUDIO_ROUTE_OUT_BTA2DP);
+    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_SRC_SF);
+    UINT8_TO_STREAM(p, AUDIO_ROUTE_SF_NA);
+    UINT8_TO_STREAM(p, AUDIO_ROUTE_EQ_BYPASS);
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    p = msg_req;
+    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_BTM_EVT);
+    UINT8_TO_STREAM(p, AUDIO_CODEC_CONFIG_REQ);
+    UINT16_TO_STREAM(p, AUDIO_CODEC_SBC_ENC);
+    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.sampling_freq);
+    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.channel_mode);
+    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.block_length);
+    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.num_subbands);
+    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.alloc_method);
+    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.bitpool_size);
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    p = msg_req;
+    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_BTM_EVT);
+    UINT8_TO_STREAM(p, A2DP_START_REQ);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.local_cid);
+    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.stream_mtu);
+    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
+
+    return brcm_vnd_a2dp_pdata.state;
+}
+
+
+static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_stream_enter(tBRCM_VND_A2DP_EVENT event)
+{
+    UNUSED(event);
+    ALOGV("%s", __FUNCTION__);
+
+    return brcm_vnd_a2dp_pdata.state;
+}
+
 static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_idle_process_ev(tBRCM_VND_A2DP_EVENT event, void *ev_data)
 {
     tBRCM_VND_A2DP_SST_STATES next_state = brcm_vnd_a2dp_pdata.state;
@@ -345,12 +442,9 @@ static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_idle_process_ev(tBRCM_VND_A2DP
             if (A2D_SUCCESS != bcrm_vnd_a2dp_parse_codec_info( &brcm_vnd_a2dp_pdata.codec_info,
                     (uint8_t *)brcm_vnd_a2dp_pdata.offload_params.codec_info)) {
                 ALOGE("%s CodecConfig BT_VND_OP_A2DP_OFFLOAD_START FAILED", __FUNCTION__);
-                bt_vendor_cbacks->a2dp_offload_cb(BT_VND_OP_RESULT_FAIL, BT_VND_OP_A2DP_OFFLOAD_START,
-                                                  brcm_vnd_a2dp_pdata.offload_params.bta_av_handle);
-            } else {
-                brcm_vnd_a2dp_offload_configure();
-                next_state = BRCM_VND_A2DP_STARTING_SST;
             }
+
+            next_state = BRCM_VND_A2DP_STARTING_SST;
             break;
 
         default:
@@ -364,7 +458,6 @@ static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_starting_process_ev(tBRCM_VND_
 {
     tBRCM_VND_A2DP_SST_STATES next_state = brcm_vnd_a2dp_pdata.state;
     uint8_t status, *p;
-
     switch (event) {
         case BRCM_VND_A2DP_OFFLOAD_START_REQ:
             brcm_vnd_a2dp_offload_cleanup();
@@ -372,13 +465,11 @@ static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_starting_process_ev(tBRCM_VND_
             if (A2D_SUCCESS != bcrm_vnd_a2dp_parse_codec_info(
                     &brcm_vnd_a2dp_pdata.codec_info, (uint8_t *)brcm_vnd_a2dp_pdata.offload_params.codec_info)) {
                 ALOGE("%s CodecConfig BT_VND_OP_A2DP_OFFLOAD_START FAILED", __FUNCTION__);
-                bt_vendor_cbacks->a2dp_offload_cb(BT_VND_OP_RESULT_FAIL, BT_VND_OP_A2DP_OFFLOAD_START,
-                                                  brcm_vnd_a2dp_pdata.offload_params.bta_av_handle);
-                next_state = BRCM_VND_A2DP_IDLE_SST;
-            } else {
-                brcm_vnd_a2dp_offload_configure();
             }
+
+            next_state = BRCM_VND_A2DP_STARTING_SST;
             break;
+
 
         case BRCM_VND_A2DP_OFFLOAD_STOP_REQ:
             brcm_vnd_a2dp_offload_cleanup();
@@ -480,13 +571,8 @@ static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_stream_process_ev(tBRCM_VND_A2
             if (A2D_SUCCESS != bcrm_vnd_a2dp_parse_codec_info(
                     &brcm_vnd_a2dp_pdata.codec_info, (uint8_t *)brcm_vnd_a2dp_pdata.offload_params.codec_info)) {
                 ALOGE("%s CodecConfig BT_VND_OP_A2DP_OFFLOAD_START FAILED", __FUNCTION__);
-                bt_vendor_cbacks->a2dp_offload_cb(BT_VND_OP_RESULT_FAIL, BT_VND_OP_A2DP_OFFLOAD_START,
-                                                  brcm_vnd_a2dp_pdata.offload_params.bta_av_handle);
-                next_state = BRCM_VND_A2DP_IDLE_SST;
-            } else {
-                brcm_vnd_a2dp_offload_configure();
-                next_state = BRCM_VND_A2DP_STARTING_SST;
             }
+            next_state = BRCM_VND_A2DP_STARTING_SST;
             break;
 
         case BRCM_VND_A2DP_OFFLOAD_STOP_REQ:
@@ -502,84 +588,6 @@ static tBRCM_VND_A2DP_SST_STATES brcm_vnd_a2dp_sm_stream_process_ev(tBRCM_VND_A2
             break;
     }
     return next_state;
-}
-
-static uint8_t brcm_vnd_a2dp_offload_configure()
-{
-    uint8_t *p, msg_req[HCI_CMD_MAX_LEN];
-
-    BTA2DPDBG("%s", __FUNCTION__);
-
-    p = msg_req;
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_READ_PCM_PINS, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    p = msg_req;
-    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_PCM_PIN_FCN);
-    UINT32_TO_STREAM(p, BRCM_A2DP_OFFLOAD_PCM_PIN_PADCNF);
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_WRITE_PCM_PINS, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    p = msg_req;
-    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_MGMT_EVT);
-    UINT8_TO_STREAM(p, UIPC_OPEN_REQ);
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    p = msg_req;
-    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_L2C_EVT);
-    UINT8_TO_STREAM(p, L2C_SYNC_TO_LITE_REQ);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.xmit_quota);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.acl_data_size);
-    UINT16_TO_STREAM(p, !(brcm_vnd_a2dp_pdata.offload_params.is_flushable));
-    UINT8_TO_STREAM(p, 0x02); //multi_av_data_cong_start
-    UINT8_TO_STREAM(p, 0x00); //multi_av_data_cong_end
-    UINT8_TO_STREAM(p, 0x04); //multi_av_data_cong_discard
-    UINT8_TO_STREAM(p, 1); //num_stream
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.local_cid);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.remote_cid);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.stream_mtu);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.lm_handle);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.xmit_quota);
-    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.is_flushable);
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    p = msg_req;
-    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_AVDT_EVT);
-    UINT8_TO_STREAM(p, AVDT_SYNC_TO_BTC_LITE_REQ);
-    UINT8_TO_STREAM(p, 1); //num_stream
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.local_cid);
-    UINT32_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.stream_source);
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    p = msg_req;
-    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_BTM_EVT);
-    UINT8_TO_STREAM(p, AUDIO_ROUTE_CONFIG_REQ);
-    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_SRC);
-    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_SRC_SF);
-    UINT8_TO_STREAM(p, AUDIO_ROUTE_OUT_BTA2DP);
-    UINT8_TO_STREAM(p, BRCM_A2DP_OFFLOAD_SRC_SF);
-    UINT8_TO_STREAM(p, AUDIO_ROUTE_SF_NA);
-    UINT8_TO_STREAM(p, AUDIO_ROUTE_EQ_BYPASS);
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    p = msg_req;
-    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_BTM_EVT);
-    UINT8_TO_STREAM(p, AUDIO_CODEC_CONFIG_REQ);
-    UINT16_TO_STREAM(p, AUDIO_CODEC_SBC_ENC);
-    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.sampling_freq);
-    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.channel_mode);
-    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.block_length);
-    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.num_subbands);
-    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.alloc_method);
-    UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.codec_info.bitpool_size);
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    p = msg_req;
-    UINT16_TO_STREAM(p, BT_EVT_BTU_IPC_BTM_EVT);
-    UINT8_TO_STREAM(p, A2DP_START_REQ);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.local_cid);
-    UINT16_TO_STREAM(p, brcm_vnd_a2dp_pdata.offload_params.stream_mtu);
-    brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_UIPC_OVER_HCI, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-
-    return 0;
 }
 
 static uint8_t brcm_vnd_a2dp_offload_cleanup()
@@ -613,7 +621,6 @@ static uint8_t brcm_vnd_a2dp_offload_cleanup()
         UINT8_TO_STREAM(p, brcm_vnd_a2dp_pdata.pcmi2s_pinmux.fcn);
         UINT32_TO_STREAM(p, brcm_vnd_a2dp_pdata.pcmi2s_pinmux.pad_conf);
         brcm_vnd_a2dp_send_hci_vsc(HCI_VSC_WRITE_PCM_PINS, msg_req, (uint8_t)(p - msg_req), brcm_vnd_a2dp_hci_uipc_cback);
-        brcm_vnd_a2dp_pdata.pcmi2s_pinmux.fcn = PCM_PIN_FCN_INVALID;
     }
 
     return 0;
@@ -729,7 +736,7 @@ int brcm_vnd_a2dp_execute(bt_vendor_opcode_t opcode, void *ev_data)
     tBRCM_VND_A2DP_EVENT ssm_event = (opcode == BT_VND_OP_A2DP_OFFLOAD_START)?
         BRCM_VND_A2DP_OFFLOAD_START_REQ:BRCM_VND_A2DP_OFFLOAD_STOP_REQ;
 
-    ALOGD("%s opcode %d , state %d", __FUNCTION__, opcode, brcm_vnd_a2dp_pdata.state);
+    ALOGD("%s opcode %d ", __FUNCTION__, opcode);
 
     return brcm_vnd_a2dp_ssm_execute(ssm_event, ev_data);
 }
