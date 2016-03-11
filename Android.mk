@@ -6,6 +6,10 @@ include $(CLEAR_VARS)
 
 BDROID_DIR := $(TOP_DIR)system/bt
 
+ifeq ($(strip $(USE_BLUETOOTH_BCM4343)),true)
+LOCAL_CFLAGS += -DUSE_BLUETOOTH_BCM4343
+endif
+
 LOCAL_SRC_FILES := \
         src/bt_vendor_brcm.c \
         src/hardware.c \

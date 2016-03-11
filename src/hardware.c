@@ -842,6 +842,15 @@ void hw_config_cback(void *p_mem)
                     strncpy(hw_cfg_cb.local_chip_name, p_name, \
                             LOCAL_NAME_BUFFER_LEN-1);
                 }
+#ifdef USE_BLUETOOTH_BCM4343
+                else if ((p_name = strstr(p_tmp, "4343")) != NULL)
+                {
+                    snprintf(hw_cfg_cb.local_chip_name,
+                             LOCAL_NAME_BUFFER_LEN-1, "BCM%s", p_name);
+                    strncpy(p_name, hw_cfg_cb.local_chip_name,
+                            LOCAL_NAME_BUFFER_LEN-1);
+                }
+#endif
                 else
                 {
                     strncpy(hw_cfg_cb.local_chip_name, "UNKNOWN", \
@@ -1460,7 +1469,27 @@ void hw_sco_config(void)
      *  and FM on the same PCM pins, we defer Bluetooth audio (SCO/eSCO)
      *  configuration till SCO/eSCO is being established;
      *  i.e. in hw_set_audio_state() call.
+     *  When configured as I2S only, Bluetooth audio configuration is executed
+     *  immediately with SCO_CODEC_CVSD by default.
      */
+
+    if (SCO_INTERFACE_I2S == sco_bus_interface) {
+        HC_BT_HDR *p_buf = NULL;
+        uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_I2SPCM_PARAM_SIZE;
+
+        if (bt_vendor_cbacks)
+            p_buf = (HC_BT_HDR *)bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + cmd_u16);
+
+        if (p_buf) {
+            p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
+            p_buf->offset = 0;
+            p_buf->layer_specific = 0;
+            p_buf->len = cmd_u16;
+            hw_sco_i2spcm_config(p_buf, SCO_CODEC_CVSD);
+        } else {
+            ALOGE("Cannot allocate memory for p_buf in hw_sco_config sco config");
+        }
+    }
 
     if (bt_vendor_cbacks)
     {
