@@ -248,10 +248,19 @@ static void cleanup( void )
     bt_vendor_cbacks = NULL;
 }
 
+/** SSR cleanup is used in HW reset cases
+ *  which would close all the client channels
+ *  and turns off the chip */
+static void ssr_cleanup( int reason )
+{
+    BTVNDDBG("ssr_cleanup");
+}
+
 // Entry point of DLib
 const bt_vendor_interface_t BLUETOOTH_VENDOR_LIB_INTERFACE = {
-    sizeof(bt_vendor_interface_t),
-    init,
-    op,
-    cleanup
+    .size = sizeof(bt_vendor_interface_t),
+    .init = init,
+    .op = op,
+    .cleanup = cleanup,
+    .ssr_cleanup = ssr_cleanup,
 };
