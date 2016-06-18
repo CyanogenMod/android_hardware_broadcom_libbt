@@ -248,10 +248,17 @@ static void cleanup( void )
     bt_vendor_cbacks = NULL;
 }
 
+// Empty function necessary for completing the interface
+static void ssr_cleanup( int reason )
+{
+    ALOGI("ssr_cleanup");
+}
+
 // Entry point of DLib
 const bt_vendor_interface_t BLUETOOTH_VENDOR_LIB_INTERFACE = {
-    sizeof(bt_vendor_interface_t),
-    init,
-    op,
-    cleanup
+    .size = sizeof(bt_vendor_interface_t),
+    .init = init,
+    .op = op,
+    .cleanup = cleanup,
+    .ssr_cleanup = ssr_cleanup,
 };
