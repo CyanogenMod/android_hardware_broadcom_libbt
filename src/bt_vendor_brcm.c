@@ -258,9 +258,9 @@ static void ssr_cleanup( int reason )
 
 // Entry point of DLib
 const bt_vendor_interface_t BLUETOOTH_VENDOR_LIB_INTERFACE = {
-    .size = sizeof(bt_vendor_interface_t),
-    .init = init,
-    .op = op,
-    .cleanup = cleanup,
-    .ssr_cleanup = ssr_cleanup,
+    sizeof(bt_vendor_interface_t),
+    init,
+    op,
+    cleanup,
+    ssr_cleanup
 };
