@@ -2,8 +2,12 @@ generated_sources := $(local-generated-sources-dir)
 
 ifneq ($(BOARD_BLUEDROID_VENDOR_CONF),)
 SRC := $(BOARD_BLUEDROID_VENDOR_CONF)
+# Allow external configuration file
+ifneq (,$(BOARD_CUSTOM_BT_CONFIG))
+SRC := $(BOARD_CUSTOM_BT_CONFIG)
 else
 SRC := $(call my-dir)/include/$(addprefix vnd_, $(addsuffix .txt,$(basename $(TARGET_DEVICE))))
+endif
 ifeq (,$(wildcard $(SRC)))
 # configuration file does not exist. Use default one
 SRC := $(call my-dir)/include/vnd_generic.txt
