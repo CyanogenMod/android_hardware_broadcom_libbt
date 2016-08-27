@@ -1,7 +1,5 @@
 generated_sources := $(local-generated-sources-dir)
 
-ifneq ($(BOARD_BLUEDROID_VENDOR_CONF),)
-SRC := $(BOARD_BLUEDROID_VENDOR_CONF)
 # Allow external configuration file
 ifneq (,$(BOARD_CUSTOM_BT_CONFIG))
 SRC := $(BOARD_CUSTOM_BT_CONFIG)
@@ -11,7 +9,6 @@ endif
 ifeq (,$(wildcard $(SRC)))
 # configuration file does not exist. Use default one
 SRC := $(call my-dir)/include/vnd_generic.txt
-endif
 endif
 GEN := $(generated_sources)/vnd_buildcfg.h
 TOOL := $(LOCAL_PATH)/gen-buildcfg.sh
